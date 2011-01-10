@@ -1,6 +1,7 @@
 Changes
+lib/Device/Velleman/PPS10.pm
 Makefile.PL
 MANIFEST
 README
 t/Device-Velleman-PPS10.t
-lib/Device/Velleman/PPS10.pm
+META.yml                                 Module meta-data (added by MakeMaker)

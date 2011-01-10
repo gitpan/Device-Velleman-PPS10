@@ -13,7 +13,7 @@ use warnings;
 
 use base qw(Exporter);
 BEGIN {
-    our $VERSION = 0.01;
+    our $VERSION = 0.02;
 }
 
 use Device::SerialPort;
@@ -205,7 +205,7 @@ sub new {
 		read_buffer      => undef, # buffer of serial port data, holding candidate packets.
 
 		# Packet info.
-		packet_count   => undef,
+		packet_count   => 0,
 		current_packet => undef,
 		first_ba_seen  => 0,
 
@@ -236,7 +236,7 @@ sub read {
 
     # Total read count and bytes.
     $self->{read_count}++;
-    $self->{read_total_bytes}+= length($read_length);
+    $self->{read_total_bytes}+= length($read_data);
 
     if ($verbose) {
 	print STDERR "Serial port reading $self->{read_count} ... ";
@@ -346,11 +346,9 @@ sub get_next_packet {
     # Truncate any leading unused data to avoid bloat of the buffer.
     substr($self->{read_buffer}, 0, $ba_index_0, '');
 
-    #print "Raw Packet: $p_data\n";
-    #print "New Buffer: $self->{read_buffer}\n";
-    #print "New Buffer length: " . length($self->{read_buffer}) . " ... ba index 1: $ba_index_1\n";
-
     my $packet = $self->parse_packet($p_data);
+
+    $self->{packet_count}++;
 
     # Return on the first packet from the parts.
     return $packet;
@@ -543,10 +541,10 @@ graphically, replicates the signal the LCD screen. The data in the
 packet is more detailed than can be drawn on the 128x64 LCD screen.
 
 Device::Velleman::PPS10 allows for reading of the raw data from the
-serial port and parses for packets containing the frames. The scope
-sends two other packet types (BR and BS), which contain 1 or just a
-few samples. Currently, the module only uses the packet type (BA)
-containing a complete frame of a signal trace.
+serial port and parses for packets containing the frames. Currently,
+the module only uses the packet type (BA) containing a complete frame
+of a signal trace. The scope sends two other packet types (BR and BS),
+which contain 1 or just a few samples.
 
 This module relies on Device::SerialPort. The user may need to handle
 permission issues when reading from the serial port device on their
@@ -567,10 +565,10 @@ sample.
 =head2 Parsed Packet Data Structure
 
 The final product of parsing the raw data from the serial device is a
-hash containing the unscaled voltage samples and oscilloscope setting
-values contained in each packet. The unscaled sample values of the
-signal are scaled to actual voltage values given the display settings
-reported in the packet.
+hash containing the unscaled and scaled voltage samples, and
+oscilloscope setting values contained in each packet. The unscaled
+sample values of the signal are scaled to actual voltage values given
+the display settings reported in the packet.
 
     $packet = {
         packet_type      => 'BA' | 'BR' | 'BS',
@@ -592,11 +590,12 @@ reported in the packet.
     };
 
 The C<time> values are simply integers 0 to 255 and represent the 256
-samples. They are scaled to C<time_scaled> using C<time_per_point> and
-should be plotted along the x-axis. The C<trace> values are scaled to
-C<trace_scaled> using C<volts_per_point> should be used for ploting
-along the y-axis. The original C<trace> values are 8-bit samples (0
-.. 255) where 127 is the 0V baseline.
+samples. They are scaled to units of C<seconds> using
+C<time_per_point> and stored in C<time_scaled>. The C<trace> values
+are scaled using C<volts_per_point> and stored in C<trace_scaled>. The
+original C<trace> values are 8-bit samples (0 .. 255) where 127 is the
+0V baseline. Plotting C<time_scaled> values on the x-axis and
+C<trace_scaled> on the y-axis will give a nice graph of the frame.
 
 =head1 METHODS
 
@@ -616,16 +615,37 @@ to the constructor are optional.
     verbose     Report actions being taken to STDERR. 0|1. Default: 0.
     debug       Enable dev actions. 0|1. Default: 0.
 
+The returned object is a hash-ref with the following structure:
+
+    $self = {
+        serial_port  => $serial_port, # Device::SerialPort object
+        port         => '/dev/ttyS0',
+	read_bytes   => 255,
+	verbose      => 0|1,
+	debug        => 0|1,
+
+	read_data        => <last data read from serial port>,
+	read_total_bytes => <int>,    # Total bytes read from serial port over life of object
+	read_count       => <int>,    # count of serial port readings
+	read_buffer      => <buffer of serial port data, holding candidate packets>
+
+        packet_count   => <int>,      # number of parsed packets over the life of the object
+        current_packet => { ... },    # hash ref of last parsed packet
+        first_ba_seen  => 0,
+
+	raw_out_fh     => undef|<filehandle>, # file handle of the raw data file
+    };
+
 =item $pps10->read;
 
 =item $pps10->read(<read byte length>);
 
 =item ($length_read, $data_read) = $pps10->read;
 
-Read data from serial port and store in buffer. Returns the length of
-the read request and the string read in array context. These are the
-same values returned by the read() method of a Device::SerialPort
-object.
+Read data from serial port and append to the rasw data buffer in the
+object. Returns the length of the read request and the string read in
+array context. These are the same values returned by the read() method
+of a Device::SerialPort object.
 
 The length of the data to be read is defined by read_bytes value
 passed to the constructor. Optional parameter to ->read() overrides
@@ -643,8 +663,9 @@ until no packets are returned. See L</"Parsed Packet Data Structure">.
 
 Start saving the raw data read from the serial port to specified
 file. Data is written to file with each ->read() after this method is
-called. Only one file is opened. If a file is already open for saving,
-additional calls to this method are ignored.
+called. This will essentially save the binary stream from the serial
+port to a file. Only one file is opened. If a file is already open for
+saving, additional calls to this method are ignored.
 
 If the second parameter is true, the filehandle is unbuffered. This
 allows the data to be immediately written to disk after each serial
