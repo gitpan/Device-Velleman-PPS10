@@ -13,7 +13,7 @@ use warnings;
 
 use base qw(Exporter);
 BEGIN {
-    our $VERSION = 0.02;
+    our $VERSION = 0.03;
 }
 
 use Device::SerialPort;
@@ -706,7 +706,7 @@ should return relevant threads.
 
 =head1 AUTHOR
 
-Narbey Derbekyan, E<lt>narbey@gmail.comE<gt>
+Narbey Derbekyan
 
 =head1 COPYRIGHT AND LICENSE
 
